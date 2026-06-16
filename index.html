@@ -1,12 +1,198 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>SutrIQ</title>
-</head>
-<body>
+// ══════════════════════════════════════════════
+//  SutrIQ — Main App Logic
+//  Auth, Navigation, Toast, User State
+// ══════════════════════════════════════════════
 
-    <h1>Welcome to SutrIQ</h1>
-    <p>My first GitHub Pages website is working.</p>
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+         signOut, onAuthStateChanged, updateProfile }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, doc, setDoc, getDoc, collection, query,
+         where, getDocs, updateDoc, arrayUnion, arrayRemove, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getDatabase, ref, push, onValue, set, serverTimestamp as dbTS }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getStorage, ref as sRef, uploadBytes, getDownloadURL }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+import { firebaseConfig, ADMIN_EMAIL, SHEETS_WEBHOOK } from "./firebase-config.js";
 
-</body>
-</html>
+// Init Firebase
+const app   = initializeApp(firebaseConfig);
+const auth  = getAuth(app);
+const db    = getFirestore(app);
+const rtdb  = getDatabase(app);
+const store = getStorage(app);
+
+// ── Global State ──
+let currentUser = null;
+let currentUserData = null;
+
+// ── Toast ──
+function toast(msg, type = "success") {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.className = `show ${type}`;
+  setTimeout(() => t.className = "", 3000);
+}
+window.toast = toast;
+
+// ── Avatar color by name ──
+const COLORS = [
+  ["#8b5cf6","#4c1d95"],["#06b6d4","#164e63"],["#ec4899","#831843"],
+  ["#f97316","#7c2d12"],["#22c55e","#14532d"],["#eab308","#713f12"]
+];
+function avatarColor(name = "") {
+  const i = name.charCodeAt(0) % COLORS.length;
+  return COLORS[i];
+}
+window.avatarColor = avatarColor;
+
+// ── Auth State Listener ──
+onAuthStateChanged(auth, async (user) => {
+  currentUser = user;
+  if (user) {
+    // Load user data from Firestore
+    const snap = await getDoc(doc(db, "users", user.uid));
+    currentUserData = snap.exists() ? snap.data() : null;
+    updateNavForUser(user, currentUserData);
+  } else {
+    updateNavForGuest();
+  }
+});
+
+function updateNavForUser(user, data) {
+  const authBtns = document.getElementById("nav-auth");
+  const userMenu = document.getElementById("nav-user");
+  if (!authBtns || !userMenu) return;
+  authBtns.style.display = "none";
+  userMenu.style.display = "flex";
+  const name = data?.name || user.email.split("@")[0];
+  const [bg] = avatarColor(name);
+  document.getElementById("nav-avatar").style.background = bg;
+  document.getElementById("nav-avatar").textContent = name[0].toUpperCase();
+  document.getElementById("nav-name").textContent = name;
+  if (user.email === ADMIN_EMAIL) {
+    document.getElementById("nav-admin-link").style.display = "inline-flex";
+  }
+}
+
+function updateNavForGuest() {
+  const authBtns = document.getElementById("nav-auth");
+  const userMenu = document.getElementById("nav-user");
+  if (!authBtns || !userMenu) return;
+  authBtns.style.display = "flex";
+  userMenu.style.display = "none";
+}
+
+// ── Signup ──
+async function signup(name, email, phone, password) {
+  const cred = await createUserWithEmailAndPassword(auth, email, password);
+  await updateProfile(cred.user, { displayName: name });
+  const userData = {
+    uid: cred.user.uid, name, email, phone,
+    createdAt: new Date().toISOString(),
+    blocked: [], role: "user"
+  };
+  await setDoc(doc(db, "users", cred.user.uid), userData);
+  // Send to Google Sheets
+  try {
+    await fetch(SHEETS_WEBHOOK, {
+      method: "POST", mode: "no-cors",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "signup", ...userData })
+    });
+  } catch(_) {}
+  return cred.user;
+}
+
+// ── Login ──
+async function login(email, password) {
+  const cred = await signInWithEmailAndPassword(auth, email, password);
+  return cred.user;
+}
+
+// ── Logout ──
+async function logout() {
+  await signOut(auth);
+  window.location.href = "/index.html";
+}
+
+// ── Block / Unblock user ──
+async function blockUser(targetUid) {
+  if (!currentUser) return;
+  await updateDoc(doc(db, "users", currentUser.uid), {
+    blocked: arrayUnion(targetUid)
+  });
+  toast("User blocked");
+}
+async function unblockUser(targetUid) {
+  if (!currentUser) return;
+  await updateDoc(doc(db, "users", currentUser.uid), {
+    blocked: arrayRemove(targetUid)
+  });
+  toast("User unblocked");
+}
+
+// ── Send Chat Message ──
+async function sendMessage(roomId, text, imageUrl = null) {
+  if (!currentUser) return;
+  const msg = {
+    uid: currentUser.uid,
+    name: currentUserData?.name || currentUser.email,
+    text: text || "",
+    imageUrl: imageUrl || null,
+    ts: dbTS()
+  };
+  await push(ref(rtdb, `chats/${roomId}`), msg);
+}
+
+// ── Upload Image ──
+async function uploadImage(file, roomId) {
+  const path = `chat-images/${roomId}/${Date.now()}_${file.name}`;
+  const snap = await uploadBytes(sRef(store, path), file);
+  return getDownloadURL(snap.ref);
+}
+
+// ── Listen to Chat ──
+function listenChat(roomId, callback) {
+  onValue(ref(rtdb, `chats/${roomId}`), (snap) => {
+    const msgs = [];
+    snap.forEach(child => msgs.push({ id: child.key, ...child.val() }));
+    callback(msgs);
+  });
+}
+
+// ── Hire Form Submission → Email + Sheets ──
+async function submitHireForm(data) {
+  // EmailJS
+  try {
+    await emailjs.send("service_sutriq", "template_hire", {
+      from_name:   data.name,
+      from_email:  data.email,
+      from_phone:  data.phone,
+      company:     data.company,
+      service:     data.service,
+      budget:      data.budget,
+      description: data.description,
+      to_email:    "nitishbharti04@gmail.com"
+    });
+  } catch(e) { console.warn("EmailJS:", e); }
+  // Google Sheets
+  try {
+    await fetch(SHEETS_WEBHOOK, {
+      method: "POST", mode: "no-cors",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "hire", ...data, submittedAt: new Date().toISOString() })
+    });
+  } catch(_) {}
+}
+
+export {
+  auth, db, rtdb, store,
+  currentUser, currentUserData,
+  ADMIN_EMAIL,
+  signup, login, logout,
+  blockUser, unblockUser,
+  sendMessage, uploadImage, listenChat,
+  submitHireForm, avatarColor, toast
+};
