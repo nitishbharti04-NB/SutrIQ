@@ -1,63 +1,191 @@
-from pathlib import Path
-
-html = r"""<!DOCTYPE html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SutrIQ Appointments</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SutrIQ - Book Appointment</title>
+
 <style>
-body{font-family:Arial,sans-serif;margin:0;background:linear-gradient(135deg,#667eea,#764ba2,#ff6b6b);min-height:100vh}
-.container{max-width:900px;margin:40px auto;background:#fff;border-radius:20px;padding:30px;box-shadow:0 10px 30px rgba(0,0,0,.2)}
-h1{text-align:center}
-input,select,textarea,button{width:100%;padding:12px;margin:8px 0;border-radius:10px;border:1px solid #ddd}
-button{background:linear-gradient(90deg,#667eea,#ff6b6b);color:#fff;border:none;font-weight:bold;cursor:pointer}
-#msg{margin-top:10px}
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:Arial, sans-serif;
+}
+
+body{
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    padding:20px;
+    background:linear-gradient(135deg,#0f172a,#2563eb,#38bdf8);
+}
+
+.container{
+    width:100%;
+    max-width:700px;
+    background:#fff;
+    padding:35px;
+    border-radius:20px;
+    box-shadow:0 15px 40px rgba(0,0,0,0.25);
+}
+
+.logo{
+    text-align:center;
+    margin-bottom:20px;
+}
+
+.logo h1{
+    color:#2563eb;
+    font-size:36px;
+}
+
+.logo p{
+    color:#666;
+}
+
+form{
+    margin-top:20px;
+}
+
+input,
+select,
+textarea{
+    width:100%;
+    padding:14px;
+    margin:10px 0;
+    border:1px solid #ddd;
+    border-radius:10px;
+    font-size:15px;
+}
+
+textarea{
+    resize:none;
+    height:120px;
+}
+
+button{
+    width:100%;
+    padding:15px;
+    border:none;
+    border-radius:10px;
+    background:linear-gradient(90deg,#2563eb,#38bdf8);
+    color:#fff;
+    font-size:16px;
+    font-weight:bold;
+    cursor:pointer;
+    transition:0.3s;
+}
+
+button:hover{
+    transform:translateY(-2px);
+}
+
+#msg{
+    margin-top:15px;
+    text-align:center;
+    font-weight:bold;
+}
+
+.footer{
+    text-align:center;
+    margin-top:25px;
+    color:#777;
+    font-size:14px;
+}
 </style>
 </head>
+
 <body>
+
 <div class="container">
-<h1>Book Appointment</h1>
-<form id="appointmentForm">
-<input name="name" placeholder="Your Name" required>
-<input name="email" type="email" placeholder="Email" required>
-<input name="phone" placeholder="Phone">
-<select name="service" required>
-<option value="">Select Service</option>
-<option>Power BI</option>
-<option>SQL Automation</option>
-<option>MIS Setup</option>
-</select>
-<textarea name="requirement" placeholder="Requirement"></textarea>
-<button type="submit">Submit Appointment</button>
-</form>
-<div id="msg"></div>
+
+    <div class="logo">
+        <h1>SutrIQ</h1>
+        <p>Book Your Appointment</p>
+    </div>
+
+    <form id="appointmentForm">
+
+        <input type="text" name="name" placeholder="Full Name" required>
+
+        <input type="email" name="email" placeholder="Email Address" required>
+
+        <input type="tel" name="phone" placeholder="Mobile Number" required>
+
+        <select name="service" required>
+            <option value="">Select Service</option>
+            <option>Power BI Dashboard</option>
+            <option>MIS Reporting</option>
+            <option>SQL Automation</option>
+            <option>Excel Automation</option>
+            <option>Business Consultation</option>
+        </select>
+
+        <textarea name="requirement" placeholder="Describe Your Requirement"></textarea>
+
+        <button type="submit">
+            Book Appointment
+        </button>
+
+    </form>
+
+    <div id="msg"></div>
+
+    <div class="footer">
+        © 2026 SutrIQ | Smart Business Solutions
+    </div>
+
 </div>
 
 <script>
-const SCRIPT_URL="PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEBAPP_URL_HERE";
 
-document.getElementById("appointmentForm").addEventListener("submit",async(e)=>{
-e.preventDefault();
-const data=Object.fromEntries(new FormData(e.target).entries());
+// Paste your deployed Google Apps Script URL below
+const SCRIPT_URL = "YOUR_GOOGLE_APPS_SCRIPT_URL";
 
-try{
-await fetch(SCRIPT_URL,{
-method:"POST",
-mode:"no-cors",
-headers:{"Content-Type":"application/json"},
-body:JSON.stringify(data)
+document.getElementById("appointmentForm").addEventListener("submit", async function(e){
+
+    e.preventDefault();
+
+    const formData = new FormData(this);
+
+    const data = Object.fromEntries(formData.entries());
+
+    try{
+
+        if(SCRIPT_URL === "YOUR_GOOGLE_APPS_SCRIPT_URL"){
+            document.getElementById("msg").innerHTML =
+            "⚠ Google Apps Script URL not configured.";
+            return;
+        }
+
+        await fetch(SCRIPT_URL,{
+            method:"POST",
+            mode:"no-cors",
+            headers:{
+                "Content-Type":"application/json"
+            },
+            body:JSON.stringify(data)
+        });
+
+        document.getElementById("msg").innerHTML =
+        "✅ Appointment Submitted Successfully";
+
+        this.reset();
+
+    }
+    catch(error){
+
+        document.getElementById("msg").innerHTML =
+        "❌ Submission Failed";
+
+        console.error(error);
+    }
+
 });
-document.getElementById("msg").innerHTML="✅ Appointment submitted successfully";
-e.target.reset();
-}catch(err){
-document.getElementById("msg").innerHTML="❌ Error submitting form";
-}
-});
+
 </script>
-</body>
-</html>"""
 
-out = "/mnt/data/SutrIQ_Github_Friendly_Appointment.html"
-Path(out).write_text(html, encoding="utf-8")
-print(out)
+</body>
+</html>
